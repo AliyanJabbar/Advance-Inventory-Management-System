@@ -105,10 +105,44 @@ import os
 import json
 
 
+
+# custom exception classes
+# for handling errors related to inventory management
+class InventoryError(Exception):
+    """Base class for inventory-related exceptions"""
+    pass
+
+# for handling specific errors
+class InsufficientStockError(InventoryError):
+    """Exception raised when trying to sell more items than available in stock"""
+    def __init__(self, product_name, requested, available):
+        self.product_name = product_name
+        self.requested = requested
+        self.available = available
+        self.message = f"Cannot sell {requested} units of '{product_name}'. Only {available} units available in stock."
+        super().__init__(self.message)
+
+# for handling duplicate product IDs
+class DuplicateProductIDError(InventoryError):
+    """Exception raised when trying to add a product with an ID that already exists"""
+    def __init__(self, product_id):
+        self.product_id = product_id
+        self.message = f"Product with ID {product_id} already exists in the inventory."
+        super().__init__(self.message)
+
+# for handling invalid product data
+class InvalidProductDataError(InventoryError):
+    """Exception raised when trying to load invalid product data from file"""
+    def __init__(self, reason):
+        self.reason = reason
+        self.message = f"Invalid product data: {reason}"
+        super().__init__(self.message)
+
+
 # File path for storing the inventory data
 INVENTORY_FILE = "inventory.json"
 
-# Add these functions to the file
+# Function to save the inventory data to a file
 def save_inventory(inventory):
     """Save the inventory data to a file"""
     try:
@@ -158,6 +192,7 @@ def save_inventory(inventory):
         print(f"❌ Error saving inventory: {e}")
         return False
 
+# Function to load the inventory data from a file
 def load_inventory():
     """Load the inventory data from a file"""
     if os.path.exists(INVENTORY_FILE):
@@ -171,39 +206,61 @@ def load_inventory():
             
             # Recreate products
             for product_data in products_data:
-                product_type = product_data["type"]
-                
-                if product_type == "Electronics":
-                    product = Electronics(
-                        product_data["product_id"],
-                        product_data["name"],
-                        product_data["price"],
-                        product_data["quantity_in_stock"],
-                        product_data["warranty_years"],
-                        product_data["brand"]
-                    )
-                elif product_type == "Grocery":
-                    product = Grocery(
-                        product_data["product_id"],
-                        product_data["name"],
-                        product_data["price"],
-                        product_data["quantity_in_stock"],
-                        product_data["expiry_date"]
-                    )
-                elif product_type == "Clothing":
-                    product = Clothing(
-                        product_data["product_id"],
-                        product_data["name"],
-                        product_data["price"],
-                        product_data["quantity_in_stock"],
-                        product_data["size"],
-                        product_data["material"]
-                    )
-                else:
-                    print(f"⚠️ Unknown product type: {product_type}")
+                try:
+                    # Check for required fields
+                    required_fields = ["product_id", "name", "price", "quantity_in_stock", "type"]
+                    for field in required_fields:
+                        if field not in product_data:
+                            raise InvalidProductDataError(f"Missing required field: {field}")
+                    
+                    product_type = product_data["type"]
+                    
+                    if product_type == "Electronics":
+                        # Check for Electronics-specific fields
+                        if "warranty_years" not in product_data or "brand" not in product_data:
+                            raise InvalidProductDataError("Missing Electronics-specific fields")
+                        
+                        product = Electronics(
+                            product_data["product_id"],
+                            product_data["name"],
+                            product_data["price"],
+                            product_data["quantity_in_stock"],
+                            product_data["warranty_years"],
+                            product_data["brand"]
+                        )
+                    elif product_type == "Grocery":
+                        # Check for Grocery-specific fields
+                        if "expiry_date" not in product_data:
+                            raise InvalidProductDataError("Missing Grocery-specific fields")
+                        
+                        product = Grocery(
+                            product_data["product_id"],
+                            product_data["name"],
+                            product_data["price"],
+                            product_data["quantity_in_stock"],
+                            product_data["expiry_date"]
+                        )
+                    elif product_type == "Clothing":
+                        # Check for Clothing-specific fields
+                        if "size" not in product_data or "material" not in product_data:
+                            raise InvalidProductDataError("Missing Clothing-specific fields")
+                        
+                        product = Clothing(
+                            product_data["product_id"],
+                            product_data["name"],
+                            product_data["price"],
+                            product_data["quantity_in_stock"],
+                            product_data["size"],
+                            product_data["material"]
+                        )
+                    else:
+                        raise InvalidProductDataError(f"Unknown product type: {product_type}")
+                    
+                    inventory._products.append(product)
+                    
+                except InvalidProductDataError as e:
+                    print(f"⚠️ Skipping invalid product: {e}")
                     continue
-                
-                inventory._products.append(product)
             
             # Update total_products global variable
             global total_products
@@ -213,13 +270,18 @@ def load_inventory():
             
             print(f"📚 Inventory loaded from {INVENTORY_FILE} with {len(inventory._products)} products")
             return inventory
+            
+        except json.JSONDecodeError:
+            print(f"❌ Error loading inventory: Invalid JSON format in {INVENTORY_FILE}")
+            return Inventory([])
         except Exception as e:
             print(f"❌ Error loading inventory: {e}")
             return Inventory([])
     else:
         print(f"📝 No inventory file found. Starting with an empty inventory.")
         return Inventory([])
-        
+
+
 # abstract class to manage other classes
 class Product(ABC):
     """An Abstract class using to manage other classes"""
@@ -259,10 +321,8 @@ class Electronics(Product):
         brand: str,
     ):
         super().__init__(product_id, name, price, quantity_in_stock)
-        global total_products
         self.warranty_years = warranty_years
         self.brand = brand
-        total_products += 1
 
     def restock(self, amount):
         self._quantity_in_stock += amount
@@ -271,7 +331,8 @@ class Electronics(Product):
         if self._quantity_in_stock >= quantity:
             self._quantity_in_stock -= quantity
         else:
-            print("the ordered quantity exceeds the quantity in stock!")
+            raise InsufficientStockError(self._name, quantity, self._quantity_in_stock)
+
 
     def __str__(self):
         return (
@@ -295,8 +356,6 @@ class Grocery(Product):
         super().__init__(product_id, name, price, quantity_in_stock)
         self.expiry_date_str = expiry_date
         self.expiry_date = self._parse_date(expiry_date)
-        global total_products  # accessing global variable
-        total_products += 1
     def _parse_date(self, date_str):
         """Convert DD/MM/YYYY string to datetime object"""
         try:
@@ -313,8 +372,7 @@ class Grocery(Product):
         if self._quantity_in_stock >= quantity:
             self._quantity_in_stock -= quantity
         else:
-            print("the ordered quantity exceeds the quantity in stock!")
-            
+            raise InsufficientStockError(self._name, quantity, self._quantity_in_stock)       
     
     def is_expired(self, current_date=None):
         """Check if product is expired compared to given date or today"""
@@ -336,8 +394,6 @@ class Clothing(Product):
         super().__init__(product_id, name, price, quantity_in_stock)
         self.size = size
         self.material = material
-        global total_products  # accessing global variable
-        total_products += 1
 
     def restock(self, amount):
         self._quantity_in_stock += amount
@@ -346,8 +402,8 @@ class Clothing(Product):
         if self._quantity_in_stock >= quantity:
             self._quantity_in_stock -= quantity
         else:
-            print("the ordered quantity exceeds the quantity in stock!")
-
+            raise InsufficientStockError(self._name, quantity, self._quantity_in_stock)
+        
     def __str__(self):
         return (
             super().__str__() + f"  |  Size: {self.size}  |  Material: {self.material}"
@@ -419,12 +475,12 @@ class Inventory:
     def sell_product(self, product_id, quantity):
         for product in self._products:
             if product._product_id == product_id:
-                if product._quantity_in_stock >= quantity:
+                try:
                     product.sell(quantity)
                     print(f"✅ Sold {quantity} units of '{product._name}'.")
                     return True
-                else:
-                    print(f"❌ Insufficient stock! Only {product._quantity_in_stock} units available.")
+                except InsufficientStockError as e:
+                    print(f"❌ {e}")
                     return False
         
         print(f"❌ No product with ID {product_id} found.")
@@ -478,54 +534,54 @@ class Inventory:
             return []
         
     # save inventory to file
-def save_to_file(self, filename):
-    """Save the inventory data to a JSON file"""
-    try:
-        # Create a list to store serializable product data
-        products_data = []
-        
-        # Check if inventory is empty
-        if not self._products:
-            print("⚠️ Inventory is empty! Nothing to save.")
-            # Still save an empty list to the file
+    def save_to_file(self, filename):
+        """Save the inventory data to a JSON file"""
+        try:
+            # Create a list to store serializable product data
+            products_data = []
+            
+            # Check if inventory is empty
+            if not self._products:
+                print("⚠️ Inventory is empty! Nothing to save.")
+                # Still save an empty list to the file
+                with open(filename, 'w') as file:
+                    json.dump(products_data, file, indent=4)
+                print(f"✅ Empty inventory saved to {filename}")
+                return True
+                
+            # If we have products, serialize them
+            for product in self._products:
+                # Common product data
+                product_data = {
+                    "product_id": product._product_id,
+                    "name": product._name,
+                    "price": product._price,
+                    "quantity_in_stock": product._quantity_in_stock,
+                    "type": product.__class__.__name__
+                }
+                
+                # Add specific attributes based on product type
+                if isinstance(product, Electronics):
+                    product_data["warranty_years"] = product.warranty_years
+                    product_data["brand"] = product.brand
+                elif isinstance(product, Grocery):
+                    product_data["expiry_date"] = product.expiry_date_str
+                elif isinstance(product, Clothing):
+                    product_data["size"] = product.size
+                    product_data["material"] = product.material
+                
+                products_data.append(product_data)
+            
+            # Write to file
             with open(filename, 'w') as file:
                 json.dump(products_data, file, indent=4)
-            print(f"✅ Empty inventory saved to {filename}")
+                
+            print(f"✅ Inventory with {len(products_data)} products saved to {filename} successfully!")
             return True
             
-        # If we have products, serialize them
-        for product in self._products:
-            # Common product data
-            product_data = {
-                "product_id": product._product_id,
-                "name": product._name,
-                "price": product._price,
-                "quantity_in_stock": product._quantity_in_stock,
-                "type": product.__class__.__name__
-            }
-            
-            # Add specific attributes based on product type
-            if isinstance(product, Electronics):
-                product_data["warranty_years"] = product.warranty_years
-                product_data["brand"] = product.brand
-            elif isinstance(product, Grocery):
-                product_data["expiry_date"] = product.expiry_date_str
-            elif isinstance(product, Clothing):
-                product_data["size"] = product.size
-                product_data["material"] = product.material
-            
-            products_data.append(product_data)
-        
-        # Write to file
-        with open(filename, 'w') as file:
-            json.dump(products_data, file, indent=4)
-            
-        print(f"✅ Inventory with {len(products_data)} products saved to {filename} successfully!")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error saving inventory: {e}")
-        return False
+        except Exception as e:
+            print(f"❌ Error saving inventory: {e}")
+            return False
 
 
 # assigning ids by calculating total products
@@ -664,7 +720,7 @@ def add_product_menu(inventory):
             print(f"✅ Clothing product '{name}' added successfully!")
             
         else:
-            print("⚠️ Please enter a valid option (1-3)!")
+            print("⚠️  Please enter a valid option (1-3)!")
             return
             
         total_products += 1  # Increment the total products counter
