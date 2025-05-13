@@ -1,0 +1,28 @@
+[
+    {
+        "product_id": 2,
+        "name": "mobile",
+        "price": 40000,
+        "quantity_in_stock": 20,
+        "type": "Electronics",
+        "warranty_years": 2,
+        "brand": "infinix"
+    },
+    {
+        "product_id": 4,
+        "name": "tomato",
+        "price": 200,
+        "quantity_in_stock": 50,
+        "type": "Grocery",
+        "expiry_date": "14/5/2025"
+    },
+    {
+        "product_id": 6,
+        "name": "shirt",
+        "price": 1500,
+        "quantity_in_stock": 60,
+        "type": "Clothing",
+        "size": "M",
+        "material": "cotton"
+    }
+]

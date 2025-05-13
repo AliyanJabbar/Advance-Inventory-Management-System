@@ -102,30 +102,116 @@
 from abc import ABC, abstractmethod
 import datetime
 import os
+import json
 
 
-
+# File path for storing the inventory data
 INVENTORY_FILE = "inventory.json"
 
 # Add these functions to the file
 def save_inventory(inventory):
     """Save the inventory data to a file"""
     try:
-        # Call the inventory's save_to_file method
-        inventory.save_to_file(INVENTORY_FILE)
-        print(f"📁 Inventory saved to {INVENTORY_FILE}")
+        # Create a list to store serializable product data
+        products_data = []
+        
+        # Check if inventory is empty
+        if not inventory._products:
+            print("⚠️ Inventory is empty! Nothing to save.")
+            # Still save an empty list to the file
+            with open(INVENTORY_FILE, 'w') as file:
+                json.dump(products_data, file, indent=4)
+            print(f"✅ Empty inventory saved to {INVENTORY_FILE}")
+            return True
+                
+        # If we have products, serialize them
+        for product in inventory._products:
+            # Common product data
+            product_data = {
+                "product_id": product._product_id,
+                "name": product._name,
+                "price": product._price,
+                "quantity_in_stock": product._quantity_in_stock,
+                "type": product.__class__.__name__
+            }
+            
+            # Add specific attributes based on product type
+            if isinstance(product, Electronics):
+                product_data["warranty_years"] = product.warranty_years
+                product_data["brand"] = product.brand
+            elif isinstance(product, Grocery):
+                product_data["expiry_date"] = product.expiry_date_str
+            elif isinstance(product, Clothing):
+                product_data["size"] = product.size
+                product_data["material"] = product.material
+            
+            products_data.append(product_data)
+        
+        # Write to file
+        with open(INVENTORY_FILE, 'w') as file:
+            json.dump(products_data, file, indent=4)
+            
+        print(f"✅ Inventory with {len(products_data)} products saved to {INVENTORY_FILE} successfully!")
+        return True
+        
     except Exception as e:
         print(f"❌ Error saving inventory: {e}")
+        return False
 
 def load_inventory():
     """Load the inventory data from a file"""
     if os.path.exists(INVENTORY_FILE):
         try:
+            # Read from file
+            with open(INVENTORY_FILE, 'r') as file:
+                products_data = json.load(file)
+            
             # Create a new inventory
             inventory = Inventory([])
-            # Load data from file
-            inventory.load_from_file(INVENTORY_FILE)
-            print(f"📚 Inventory loaded from {INVENTORY_FILE}")
+            
+            # Recreate products
+            for product_data in products_data:
+                product_type = product_data["type"]
+                
+                if product_type == "Electronics":
+                    product = Electronics(
+                        product_data["product_id"],
+                        product_data["name"],
+                        product_data["price"],
+                        product_data["quantity_in_stock"],
+                        product_data["warranty_years"],
+                        product_data["brand"]
+                    )
+                elif product_type == "Grocery":
+                    product = Grocery(
+                        product_data["product_id"],
+                        product_data["name"],
+                        product_data["price"],
+                        product_data["quantity_in_stock"],
+                        product_data["expiry_date"]
+                    )
+                elif product_type == "Clothing":
+                    product = Clothing(
+                        product_data["product_id"],
+                        product_data["name"],
+                        product_data["price"],
+                        product_data["quantity_in_stock"],
+                        product_data["size"],
+                        product_data["material"]
+                    )
+                else:
+                    print(f"⚠️ Unknown product type: {product_type}")
+                    continue
+                
+                inventory._products.append(product)
+            
+            # Update total_products global variable
+            global total_products
+            if inventory._products:
+                max_id = max(product._product_id for product in inventory._products)
+                total_products = max(total_products, max_id)
+            
+            print(f"📚 Inventory loaded from {INVENTORY_FILE} with {len(inventory._products)} products")
             return inventory
         except Exception as e:
             print(f"❌ Error loading inventory: {e}")
@@ -133,7 +219,7 @@ def load_inventory():
     else:
         print(f"📝 No inventory file found. Starting with an empty inventory.")
         return Inventory([])
-    
+        
 # abstract class to manage other classes
 class Product(ABC):
     """An Abstract class using to manage other classes"""
@@ -390,6 +476,56 @@ class Inventory:
         else:
             print("✅ No expired products found.")
             return []
+        
+    # save inventory to file
+def save_to_file(self, filename):
+    """Save the inventory data to a JSON file"""
+    try:
+        # Create a list to store serializable product data
+        products_data = []
+        
+        # Check if inventory is empty
+        if not self._products:
+            print("⚠️ Inventory is empty! Nothing to save.")
+            # Still save an empty list to the file
+            with open(filename, 'w') as file:
+                json.dump(products_data, file, indent=4)
+            print(f"✅ Empty inventory saved to {filename}")
+            return True
+            
+        # If we have products, serialize them
+        for product in self._products:
+            # Common product data
+            product_data = {
+                "product_id": product._product_id,
+                "name": product._name,
+                "price": product._price,
+                "quantity_in_stock": product._quantity_in_stock,
+                "type": product.__class__.__name__
+            }
+            
+            # Add specific attributes based on product type
+            if isinstance(product, Electronics):
+                product_data["warranty_years"] = product.warranty_years
+                product_data["brand"] = product.brand
+            elif isinstance(product, Grocery):
+                product_data["expiry_date"] = product.expiry_date_str
+            elif isinstance(product, Clothing):
+                product_data["size"] = product.size
+                product_data["material"] = product.material
+            
+            products_data.append(product_data)
+        
+        # Write to file
+        with open(filename, 'w') as file:
+            json.dump(products_data, file, indent=4)
+            
+        print(f"✅ Inventory with {len(products_data)} products saved to {filename} successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error saving inventory: {e}")
+        return False
 
 
 # assigning ids by calculating total products
@@ -463,19 +599,17 @@ def run_inventory_system(inventory):
             # SAVE INVENTORY
             elif opt == "9":
                 save_inventory(inventory)
-                print("Inventory saved successfully!")
             
             # LOAD INVENTORY
             elif opt == "10":
                 loaded_inventory = load_inventory()
-                if loaded_inventory:
+                if loaded_inventory and loaded_inventory._products:
                     inventory._products = loaded_inventory._products
                     global total_products
                     # Update total_products to be at least the highest product ID
                     for product in inventory._products:
                         total_products = max(total_products, product._product_id)
                     print(f"✅ Loaded {len(inventory._products)} products.")
-            
             # EXIT
             elif opt == "11":
                 condition = False
